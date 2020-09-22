@@ -2,8 +2,8 @@
 //  libthpool.h
 //  libthpool
 //
-//  Created by 陈健康 on 2019/11/12.
-//  Copyright © 2019 陈健康. All rights reserved.
+//  Created by BXYMartin on 2020/11/12.
+//  Copyright © 2020 BXYMartin. All rights reserved.
 //
 
 #ifndef libthpool_h
@@ -29,5 +29,38 @@ typedef struct task_data{
 threadpool_t * libthpool_init(int min_thr_num, int max_thr_num, int queue_max_size);
 int libthpool_destroy(threadpool_t *pool);
 int libthpool_task_put(threadpool_t *pool, task_func function, void *arg);
-int libthpool_state(int *task_queue,int *live_thr_num,int *busy_thr_num);
+int libthpool_state(threadpool_t *pool);
+
+// Exposed Functions
+typedef struct {
+    int*            rowArray;
+    const int*      rowOffset;
+    int             rowArraySize;
+    const int*      columnIndice;
+    const double*   S;
+    const double*   valueNormalMatrix;
+    double*         Id;
+} TaskMatrixInfoA;
+
+void matrix_calc_taskA(TaskMatrixInfoA** listDataList, int N);
+
+typedef struct {
+    const double*       valueSpiceMatrix;
+    const int*          rowOffset;
+    const int*          columnIndice;
+    double*             A;
+    double*             S;
+    double*             R;
+    double*             H;
+    double*             D;
+    double*             IC;
+    double*             IG;
+    double*             alpha;
+    int*                rowArray;
+    int                 rowArraySize;
+    void*               hdl;
+} TaskMatrixInfoB;
+
+void matrix_calc_taskB(TaskMatrixInfoB** listDataList, int N);
+
 #endif /* libthpool_h */

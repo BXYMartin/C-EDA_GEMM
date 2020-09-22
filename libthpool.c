@@ -2,8 +2,8 @@
 //  main.c
 //  libthpool
 //
-//  Created by 陈健康 on 2019/11/12.
-//  Copyright © 2019 陈健康. All rights reserved.
+//  Created by BXYMartin on 2020/11/12.
+//  Copyright © 2020 BXYMartin. All rights reserved.
 //
 
 #include <stdio.h>
@@ -46,9 +46,13 @@ struct threadpool_t{
     int shutdown;                         /* true为关闭 */
 };
 
-#define DEFAULT_CHECK_INTERVAL 3
-#define DEFAULT_THREAD_NUM 5
-#define MIN_WAIT_TASK_NUM  5
+#define DEFAULT_CHECK_INTERVAL 0
+#define DEFAULT_THREAD_NUM 1
+#define MIN_WAIT_TASK_NUM  0
+
+#define MIN_THREAD_NUM  1
+#define MAX_THREAD_NUM  2
+#define MAX_QUEUE_SIZE  30
 
 #ifndef ESRCH
 #define ESRCH 3
@@ -77,7 +81,7 @@ static void * admin_thread(void *threadpool)
     threadpool_t *pool = (threadpool_t *)threadpool;
     while (!pool->shutdown)
     {
-        printf("admin -----------------\n");
+        //printf("admin -----------------\n");
         sleep(DEFAULT_CHECK_INTERVAL);               /*隔一段时间再管理*/
         pthread_mutex_lock(&(pool->lock));               /*加锁*/
         g_queue_size = pool->queue_size;               /*任务数*/
@@ -88,11 +92,11 @@ static void * admin_thread(void *threadpool)
         g_busy_thr_num = pool->busy_thr_num;           /*忙线程数*/
         pthread_mutex_unlock(&(pool->thread_counter));
         
-        printf("admin busy live -%d--%d-\n", g_busy_thr_num, g_live_thr_num);
+        //printf("admin busy live -%d--%d-\n", g_busy_thr_num, g_live_thr_num);
         /*创建新线程 实际任务数量大于 最小正在等待的任务数量，存活线程数小于最大线程数*/
         if (g_queue_size >= MIN_WAIT_TASK_NUM && g_live_thr_num <= pool->max_thr_num)
         {
-            printf("admin add-----------\n");
+            //printf("admin add-----------\n");
             pthread_mutex_lock(&(pool->lock));
             int add=0;
             
@@ -105,7 +109,7 @@ static void * admin_thread(void *threadpool)
                     pthread_create(&(pool->threads[i]), NULL, work_thread, (void *)pool);
                     add++;
                     pool->live_thr_num++;
-                    printf("new thread start-----------------------\n");
+                    //printf("new thread start-----------------------\n");
                 }
             }
             
@@ -125,7 +129,7 @@ static void * admin_thread(void *threadpool)
             {
                 //通知正在处于空闲的线程，自杀
                 pthread_cond_signal(&(pool->queue_not_empty));
-                printf("admin cler --\n");
+                //printf("admin cler --\n");
             }
         }
         
@@ -134,18 +138,15 @@ static void * admin_thread(void *threadpool)
     return NULL;
 }
 
-int libthpool_state(int *task_queue,int *live_thr_num,int *busy_thr_num)
+int libthpool_state(threadpool_t *pool)
 {
-    if(task_queue){
-        *task_queue = g_queue_size;
+    int flag = 0;
+    pthread_mutex_lock(&(pool->lock));
+    if(pool->queue_size == 0 && pool->busy_thr_num == 0 && pool->live_thr_num == MIN_THREAD_NUM){
+        flag = 1;
     }
-    if(live_thr_num){
-        *live_thr_num = g_live_thr_num;
-    }
-    if(busy_thr_num){
-        *busy_thr_num = g_busy_thr_num;
-    }
-    return OPCODE_SUCCESS;
+    pthread_mutex_unlock(&(pool->lock));
+    return flag;
 }
 /*释放线程池*/
 int threadpool_free(threadpool_t *pool)
@@ -186,7 +187,7 @@ void *work_thread(void *threadpool)
         /* 无任务则阻塞在 “任务队列不为空” 上，有任务则跳出 */
         while ((pool->queue_size == 0) && (!pool->shutdown))
         {
-            printf("thread 0x%x is waiting \n", (unsigned int)pthread_self());
+            //printf("thread 0x%x is waiting \n", (unsigned int)pthread_self());
             pthread_cond_wait(&(pool->queue_not_empty), &(pool->lock));
             
             /* 判断是否需要清除线程,自杀功能 */
@@ -196,7 +197,7 @@ void *work_thread(void *threadpool)
                 /* 判断线程池中的线程数是否大于最小线程数，是则结束当前线程 */
                 if (pool->live_thr_num > pool->min_thr_num)
                 {
-                    printf("thread 0x%x is exiting \n", (unsigned int)pthread_self());
+                    //printf("thread 0x%x is exiting \n", (unsigned int)pthread_self());
                     pool->live_thr_num--;
                     pthread_mutex_unlock(&(pool->lock));
                     pthread_exit(NULL);//结束线程
@@ -208,7 +209,7 @@ void *work_thread(void *threadpool)
         if (pool->shutdown) //关闭线程池
         {
             pthread_mutex_unlock(&(pool->lock));
-            printf("thread 0x%x is exiting \n", (unsigned int)pthread_self());
+            //printf("thread 0x%x is exiting \n", (unsigned int)pthread_self());
             pthread_exit(NULL); //线程自己结束自己
         }
         
@@ -226,7 +227,7 @@ void *work_thread(void *threadpool)
         pthread_mutex_unlock(&(pool->lock));
         
         //执行刚才取出的任务
-        printf("thread 0x%x start working \n", (unsigned int)pthread_self());
+        //printf("thread 0x%x start working \n", (unsigned int)pthread_self());
         pthread_mutex_lock(&(pool->thread_counter));            //锁住忙线程变量
         pool->busy_thr_num++;
         pthread_mutex_unlock(&(pool->thread_counter));
@@ -234,7 +235,7 @@ void *work_thread(void *threadpool)
         (*(task.task_func))(task.arg);                           //执行任务
         
         //任务结束处理
-        printf("thread 0x%x end working \n", (unsigned int)pthread_self());
+        //printf("thread 0x%x end working \n", (unsigned int)pthread_self());
         pthread_mutex_lock(&(pool->thread_counter));
         pool->busy_thr_num--;
         pthread_mutex_unlock(&(pool->thread_counter));
@@ -251,14 +252,14 @@ libthpool_task_put(threadpool_t *pool, task_func function, void *arg)
     
     /*如果队列满了,调用wait阻塞*/
     while ((pool->queue_size == pool->queue_max_size) && (!pool->shutdown)){
-        printf("queue is full... waitting...\n");
+        //printf("queue is full... waitting...\n");
         pthread_cond_wait(&(pool->queue_not_full), &(pool->lock));
     }
     
     /*如果线程池处于关闭状态*/
     if (pool->shutdown)
     {
-        printf("libtreadpool will be shutdown!\n");
+        //printf("libtreadpool will be shutdown!\n");
         pthread_mutex_unlock(&(pool->lock));
         return -1;
     }
@@ -335,7 +336,7 @@ threadpool_t * libthpool_init(int min_thr_num, int max_thr_num, int queue_max_si
             pthread_cond_init(&(pool->queue_not_empty), NULL) !=0  ||
             pthread_cond_init(&(pool->queue_not_full), NULL) !=0)
         {
-            printf("init lock or cond false;\n");
+            //printf("init lock or cond false;\n");
             break;
         }
         
@@ -344,7 +345,7 @@ threadpool_t * libthpool_init(int min_thr_num, int max_thr_num, int queue_max_si
         {
             /* pool指向当前线程池  threadpool_thread函数在后面讲解 */
             pthread_create(&(pool->threads[i]), NULL, work_thread, (void *)pool);
-            printf("start thread num %d...0x%x \n",i, (unsigned int)pool->threads[i]);
+            //printf("start thread num %d...0x%x \n",i, (unsigned int)pool->threads[i]);
         }
         /* 管理者线程 admin_thread函数在后面讲解 */
         pthread_create(&(pool->admin_tid), NULL, admin_thread, (void *)pool);
@@ -385,3 +386,89 @@ int libthpool_destroy(threadpool_t *pool)
     threadpool_free(pool);
     return OPCODE_SUCCESS;
 }
+
+void handle_taskA_func(void *arg)
+{
+    TaskMatrixInfoA* info =(TaskMatrixInfoA*) arg;
+    {
+        for (int it = 0; it < info->rowArraySize; ++it)
+        {
+            const int node = info->rowArray[it];
+            for (int j = info->rowOffset[node]; j < info->rowOffset[node + 1]; ++j)
+            {
+                info->Id[node] += info->valueNormalMatrix[j] * info->S[info->columnIndice[j]];
+            }
+        }
+    }
+}
+
+void handle_taskB_func(void *arg)
+{
+    TaskMatrixInfoB* info =(TaskMatrixInfoB*) arg;
+    {
+        for (int it = 0; it < info->rowArraySize; ++it)
+        {
+            int row = info->rowArray[it];
+            for (int p = info->rowOffset[row]; p < info->rowOffset[row + 1]; ++p)
+            {
+                int col = info->columnIndice[p];
+                const int k = p * 2;
+                double cond = info->valueSpiceMatrix[k];
+                double cap = info->valueSpiceMatrix[k + 1];
+                info->IG[row] += cond * info->S[col];
+                info->IC[row] += cap * info->S[col];
+            }
+        }
+        for (int it = 0; it < info->rowArraySize; ++it)
+        {
+            int row = info->rowArray[it];
+            const int kl = row * 2;
+            double current = info->D[kl];
+            double charge = info->D[kl + 1];
+            for (int p = info->rowOffset[row]; p < info->rowOffset[row + 1]; ++p)
+            {
+                int col = info->columnIndice[p];
+                const int k = p * 2;
+                current -= info->valueSpiceMatrix[k] * info->S[col];
+                charge -= info->valueSpiceMatrix[k + 1] * info->S[col];
+            }
+            info->R[row] = current;
+            info->H[row] = charge;
+        }
+    }
+}
+
+void matrix_calc_taskA(TaskMatrixInfoA** listDataList, int N)
+{
+    threadpool_t *ths = NULL;
+    ths = libthpool_init(MIN_THREAD_NUM, MAX_THREAD_NUM, MAX_QUEUE_SIZE);
+    for (int i = 0; i < N; ++i)
+    {
+        libthpool_task_put(ths, handle_taskA_func, listDataList[i]);
+    }
+    while(1){
+        if(libthpool_state(ths)){
+            break;
+        }
+        sleep(0);
+    }
+    libthpool_destroy(ths);
+}
+
+void matrix_calc_taskB(TaskMatrixInfoB** listDataList, int N)
+{
+    threadpool_t *ths = NULL;
+    ths = libthpool_init(10, 20, 30);
+    for (int i = 0; i < N; ++i)
+    {
+        libthpool_task_put(ths, handle_taskB_func, listDataList[i]);
+    }
+    while(1){
+        if(libthpool_state(ths)){
+            break;
+        }
+        sleep(0);
+    }
+    libthpool_destroy(ths);
+}
+
